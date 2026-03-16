@@ -130,28 +130,21 @@ async function callMcpTool(toolName: string, args: Record<string, any>): Promise
 
 ## Design & UX
 
-The app MUST look impressive and professional:
-- Use a modern, polished UI with clean typography and spacing
-- Use a professional color palette (e.g. dark sidebar + light content area)
-- Add smooth transitions and hover effects
-- Use card-based layouts with subtle shadows and rounded corners
-- Include a proper header/navigation bar with the app name
-- Add loading skeletons (not just spinners) for async operations
-- Make it responsive (works on desktop and tablet)
-- Use CSS Grid or Flexbox for layouts
-- Consider using a CSS framework like Tailwind (install it) for rapid styling
-- The app should look like a real SaaS product, not a demo
+- Professional, modern look — clean typography, good spacing, rounded corners
+- Use a nice color palette (blues/grays work well for finance apps)
+- Smooth transitions and hover effects
+- Loading spinners for async operations
+- Keep it simple — single page app, no complex routing
+- The app should be in a SINGLE App.tsx file (plus api.ts for API calls)
 
-## Testing
+## Build Requirements
 
-- Write unit tests for all API client functions in `src/api.test.ts`
-- Write component tests for key React components using Vitest + React Testing Library
-- Install dev dependencies: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom`
-- Configure Vitest in `vite.config.ts`
-- All tests must pass (`npm test`) and the app must build (`npm run build`)
+- The app MUST compile and build without errors: `npm run build`
+- Fix any TypeScript errors before finishing
+- Keep the code simple — avoid complex type gymnastics
+- Do NOT write test files — focus on making the app work correctly
 
 ## Conventions
 - Modern React (hooks, functional components)
-- Include loading states and error handling for every API call
-- All API calls go through `callMcpTool()` in api.ts
-- Include a way to call `run_ai_agent` from the UI (e.g. a prompt input)
+- Include loading states and error handling for API calls
+- All API calls go through the api.ts wrapper
