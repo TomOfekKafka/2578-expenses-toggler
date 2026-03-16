@@ -1,10 +1,10 @@
 // Simple REST client for MCP tool calls
 // Auth is handled server-side via session headers
 
-const API_BASE = import.meta.env.VITE_MCP_URL?.replace('/mcp', '') ?? '';
+const MCP_BASE = 'https://mcp-poc-tom.azurewebsites.net';
 
 export async function callMcpTool(toolName: string, args: Record<string, unknown> = {}): Promise<unknown> {
-  const response = await fetch(API_BASE + '/api/tool', {
+  const response = await fetch(MCP_BASE + '/api/tool', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
