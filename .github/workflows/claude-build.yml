@@ -1,0 +1,86 @@
+name: Claude Code Build
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: 'Prompt for Claude Code to generate or modify the app'
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Generate code with Claude Code
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          claude -p "${{ github.event.inputs.prompt }}" \
+            --allowedTools "Bash(command:*)" "Edit" "Write" "Read" "Glob" "Grep" \
+            --max-turns 25
+      - name: Build and test (with retry loop)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          MAX_ATTEMPTS=3
+          ATTEMPT=1
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "=== Attempt $ATTEMPT of $MAX_ATTEMPTS ==="
+
+            # Install dependencies
+            npm install 2>&1 || true
+
+            # Try build
+            BUILD_OUTPUT=$(npm run build 2>&1) && BUILD_OK=true || BUILD_OK=false
+            echo "$BUILD_OUTPUT"
+
+            # Try tests (if test script exists)
+            if grep -q '"test"' package.json 2>/dev/null; then
+              TEST_OUTPUT=$(npm test -- --run 2>&1) && TEST_OK=true || TEST_OK=false
+              echo "$TEST_OUTPUT"
+            else
+              TEST_OK=true
+              TEST_OUTPUT="No test script found"
+            fi
+
+            if [ "$BUILD_OK" = true ] && [ "$TEST_OK" = true ]; then
+              echo "=== Build and tests passed on attempt $ATTEMPT ==="
+              break
+            fi
+
+            if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+              echo "=== Failed after $MAX_ATTEMPTS attempts ==="
+              exit 1
+            fi
+
+            echo "=== Failures detected, running Claude Code to fix ==="
+            FIX_PROMPT="The build or tests failed. Fix all errors.
+
+          Build output:
+          $BUILD_OUTPUT
+
+          Test output:
+          $TEST_OUTPUT
+
+          Fix the code so that 'npm run build' and 'npm test -- --run' both pass."
+
+            claude -p "$FIX_PROMPT" \
+              --allowedTools "Bash(command:*)" "Edit" "Write" "Read" "Glob" "Grep" \
+              --max-turns 25
+
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+      - name: Commit and push changes
+        run: |
+          git config user.name "Claude Code"
+          git config user.email "claude@datarails.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "Update app via Claude Code"
+          git push
