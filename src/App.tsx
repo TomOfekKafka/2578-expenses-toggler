@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   PieChart,
   Pie,
@@ -7,6 +7,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts'
+import { callMcpTool } from './api'
 
 type Period = 'month' | 'quarter' | 'year'
 
@@ -64,11 +65,84 @@ const pct = (adjusted: number, original: number) => {
   return Math.round(((adjusted - original) / original) * 100)
 }
 
+interface AggregateRow {
+  DR_ACC_L1?: string
+  DR_ACC_L2?: string
+  Amount?: number
+  [key: string]: unknown
+}
+
+function parseApiData(rows: AggregateRow[]): CategoryData[] {
+  return rows
+    .map((row) => {
+      const category = String(row.DR_ACC_L1 ?? row.DR_ACC_L2 ?? 'Unknown')
+      const amount = Number(row.Amount ?? 0)
+      return { category, original: Math.abs(amount), adjusted: Math.abs(amount) }
+    })
+    .filter((d) => d.original > 0)
+    .sort((a, b) => b.original - a.original)
+}
+
 export default function App() {
   const [period, setPeriod] = useState<Period>('month')
   const [adjustments, setAdjustments] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [apiData, setApiData] = useState<Record<Period, CategoryData[] | null>>({
+    month: null,
+    quarter: null,
+    year: null,
+  })
+  const tableIdRef = useRef<string | null>(null)
 
-  const baseData = MOCK_DATA[period]
+  const fetchData = async (p: Period) => {
+    setLoading(true)
+    setError(null)
+    try {
+      // Discover table ID if we haven't yet
+      if (!tableIdRef.current) {
+        const tables = await callMcpTool('list_finance_tables', {}) as { tables?: Array<{ id: string; name: string }> }
+        const tableList = tables?.tables ?? (Array.isArray(tables) ? tables as Array<{ id: string; name: string }> : [])
+        if (tableList.length === 0) throw new Error('No tables found')
+        // Pick first table or one that looks like expenses
+        const expenseTable = tableList.find(
+          (t) => /expense|p&l|pl|budget/i.test(t.name)
+        ) ?? tableList[0]
+        tableIdRef.current = expenseTable.id
+      }
+
+      const result = await callMcpTool('aggregate_table_data', {
+        table_id: tableIdRef.current,
+        dimensions: ['DR_ACC_L1'],
+        metrics: [{ field: 'Amount', agg: 'SUM' }],
+        filters: [
+          { name: 'Scenario', values: ['Actuals'], is_excluded: false },
+          { name: 'DR_ACC_L0', values: ['P&L'], is_excluded: false },
+        ],
+      }) as { rows?: AggregateRow[] } | AggregateRow[]
+
+      const rows: AggregateRow[] = Array.isArray(result)
+        ? (result as AggregateRow[])
+        : ((result as { rows?: AggregateRow[] })?.rows ?? [])
+
+      const parsed = parseApiData(rows)
+      if (parsed.length === 0) throw new Error('No data returned from API')
+
+      setApiData((prev) => ({ ...prev, [p]: parsed }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      setError(`API error: ${msg}. Showing mock data.`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchData(period)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period])
+
+  const baseData: CategoryData[] = apiData[period] ?? MOCK_DATA[period]
 
   const data: CategoryData[] = useMemo(
     () =>
@@ -139,113 +213,133 @@ export default function App() {
           </div>
         </div>
 
-        {/* Summary Cards */}
-        <div className="summary-cards">
-          <div className="card">
-            <span className="card-label">Original Total</span>
-            <span className="card-value">{fmt(totalOriginal)}</span>
+        {/* Error Banner */}
+        {error && (
+          <div className="error-banner" role="alert">
+            <span className="error-icon">⚠</span>
+            <span>{error}</span>
           </div>
-          <div className={`card${totalAdjusted !== totalOriginal ? (totalAdjusted > totalOriginal ? ' card-up' : ' card-down') : ''}`}>
-            <span className="card-label">Adjusted Total</span>
-            <span className="card-value">{fmt(totalAdjusted)}</span>
-            {totalAdjusted !== totalOriginal && (
-              <span className="card-delta">
-                {totalAdjusted > totalOriginal ? '+' : ''}{pct(totalAdjusted, totalOriginal)}%
-              </span>
-            )}
+        )}
+
+        {/* Loading Overlay */}
+        {loading && (
+          <div className="loading-overlay">
+            <div className="spinner" />
+            <span>Loading data…</span>
           </div>
-        </div>
+        )}
 
-        {/* Pie Chart */}
-        <div className="chart-section">
-          <h2>Expense Breakdown</h2>
-          <div className="chart-wrapper">
-            <ResponsiveContainer width="100%" height={360}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={80}
-                  outerRadius={140}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {pieData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend
-                  iconType="circle"
-                  iconSize={10}
-                  formatter={(value) => <span className="legend-label">{value}</span>}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        {!loading && (
+          <>
+            {/* Summary Cards */}
+            <div className="summary-cards">
+              <div className="card">
+                <span className="card-label">Original Total</span>
+                <span className="card-value">{fmt(totalOriginal)}</span>
+              </div>
+              <div className={`card${totalAdjusted !== totalOriginal ? (totalAdjusted > totalOriginal ? ' card-up' : ' card-down') : ''}`}>
+                <span className="card-label">Adjusted Total</span>
+                <span className="card-value">{fmt(totalAdjusted)}</span>
+                {totalAdjusted !== totalOriginal && (
+                  <span className="card-delta">
+                    {totalAdjusted > totalOriginal ? '+' : ''}{pct(totalAdjusted, totalOriginal)}%
+                  </span>
+                )}
+              </div>
+            </div>
 
-        {/* Category Sliders */}
-        <div className="sliders-section">
-          <h2>Adjust by Category</h2>
-          <div className="sliders-grid">
-            {data.map((item, index) => {
-              const sliderMax = Math.round(item.original * 2)
-              const sliderVal = item.adjusted
-              const diff = pct(item.adjusted, item.original)
-              const hasChange = item.adjusted !== item.original
+            {/* Pie Chart */}
+            <div className="chart-section">
+              <h2>Expense Breakdown</h2>
+              <div className="chart-wrapper">
+                <ResponsiveContainer width="100%" height={360}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={80}
+                      outerRadius={140}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {pieData.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend
+                      iconType="circle"
+                      iconSize={10}
+                      formatter={(value) => <span className="legend-label">{value}</span>}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
 
-              return (
-                <div className="slider-card" key={item.category}>
-                  <div className="slider-header">
-                    <div className="slider-category">
-                      <span
-                        className="category-dot"
-                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+            {/* Category Sliders */}
+            <div className="sliders-section">
+              <h2>Adjust by Category</h2>
+              <div className="sliders-grid">
+                {data.map((item, index) => {
+                  const sliderMax = Math.round(item.original * 2)
+                  const sliderVal = item.adjusted
+                  const diff = pct(item.adjusted, item.original)
+                  const hasChange = item.adjusted !== item.original
+
+                  return (
+                    <div className="slider-card" key={item.category}>
+                      <div className="slider-header">
+                        <div className="slider-category">
+                          <span
+                            className="category-dot"
+                            style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                          />
+                          <span className="category-name">{item.category}</span>
+                        </div>
+                        {hasChange && (
+                          <span className={`delta-badge${diff > 0 ? ' up' : ' down'}`}>
+                            {diff > 0 ? '+' : ''}{diff}%
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="slider-values">
+                        <div className="value-row">
+                          <span className="value-label">Original</span>
+                          <span className="value-amount original">{fmt(item.original)}</span>
+                        </div>
+                        <div className="value-row">
+                          <span className="value-label">Adjusted</span>
+                          <span className={`value-amount adjusted${hasChange ? (diff > 0 ? ' up' : ' down') : ''}`}>
+                            {fmt(item.adjusted)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <input
+                        type="range"
+                        min={0}
+                        max={sliderMax}
+                        step={Math.max(100, Math.round(item.original / 100))}
+                        value={sliderVal}
+                        onChange={(e) => handleSlider(item.category, Number(e.target.value))}
+                        className="slider"
+                        style={{ '--thumb-color': COLORS[index % COLORS.length] } as React.CSSProperties}
                       />
-                      <span className="category-name">{item.category}</span>
-                    </div>
-                    {hasChange && (
-                      <span className={`delta-badge${diff > 0 ? ' up' : ' down'}`}>
-                        {diff > 0 ? '+' : ''}{diff}%
-                      </span>
-                    )}
-                  </div>
 
-                  <div className="slider-values">
-                    <div className="value-row">
-                      <span className="value-label">Original</span>
-                      <span className="value-amount original">{fmt(item.original)}</span>
+                      <div className="slider-range-labels">
+                        <span>$0</span>
+                        <span>{fmt(sliderMax)}</span>
+                      </div>
                     </div>
-                    <div className="value-row">
-                      <span className="value-label">Adjusted</span>
-                      <span className={`value-amount adjusted${hasChange ? (diff > 0 ? ' up' : ' down') : ''}`}>
-                        {fmt(item.adjusted)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <input
-                    type="range"
-                    min={0}
-                    max={sliderMax}
-                    step={Math.max(100, Math.round(item.original / 100))}
-                    value={sliderVal}
-                    onChange={(e) => handleSlider(item.category, Number(e.target.value))}
-                    className="slider"
-                    style={{ '--thumb-color': COLORS[index % COLORS.length] } as React.CSSProperties}
-                  />
-
-                  <div className="slider-range-labels">
-                    <span>$0</span>
-                    <span>{fmt(sliderMax)}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+                  )
+                })}
+              </div>
+            </div>
+          </>
+        )}
       </main>
     </div>
   )
