@@ -1,7 +1,10 @@
-// MCP client — auth is handled server-side via session headers
+// Simple REST client for MCP tool calls
+// Auth is handled server-side via session headers
 
-export async function callMcpTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
-  const response = await fetch(import.meta.env.VITE_MCP_URL, {
+const API_BASE = import.meta.env.VITE_MCP_URL?.replace('/mcp', '') ?? '';
+
+export async function callMcpTool(toolName: string, args: Record<string, unknown> = {}): Promise<unknown> {
+  const response = await fetch(API_BASE + '/api/tool', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -10,12 +13,13 @@ export async function callMcpTool(toolName: string, args: Record<string, unknown
       'X-Domain': import.meta.env.VITE_DR_DOMAIN ?? '',
     },
     body: JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'tools/call',
-      params: { name: toolName, arguments: args },
-      id: Date.now(),
+      tool: toolName,
+      args: args,
     }),
-  })
-  const data = await response.json()
-  return JSON.parse((data.result?.content?.[0]?.text) ?? '{}')
+  });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(errText);
+  }
+  return await response.json();
 }
