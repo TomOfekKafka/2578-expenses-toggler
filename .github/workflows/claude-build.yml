@@ -31,6 +31,7 @@ jobs:
             Do NOT finish until 'npm run build' passes cleanly.
         run: |
           claude -p "$APP_PROMPT" \
+            --output-format stream-json \
             --verbose \
             --allowedTools "Bash(command:*)" "Edit" "Write" "Read" "Glob" "Grep" \
             --max-turns 30
