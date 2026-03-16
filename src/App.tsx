@@ -66,7 +66,7 @@ const pct = (adjusted: number, original: number) => {
 }
 
 interface AggregateRow {
-  DR_ACC_L1.5?: string
+  "DR_ACC_L1.5"?: string
   DR_ACC_L2?: string
   Amount?: number
   [key: string]: unknown
