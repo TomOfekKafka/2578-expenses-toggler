@@ -37,6 +37,11 @@ jobs:
             --allowedTools "Bash(command:*)" "Edit" "Write" "Read" "Glob" "Grep" \
             --max-turns 30
       - name: Final build verification
+        env:
+          VITE_MCP_URL: https://mcp-poc-tom.azurewebsites.net/mcp
+          VITE_DR_SESSION_ID: ${{ secrets.DR_SESSION_ID }}
+          VITE_DR_CSRF_TOKEN: ${{ secrets.DR_CSRF_TOKEN }}
+          VITE_DR_DOMAIN: ${{ secrets.DR_DOMAIN }}
         run: |
           npm install
           npm run build
