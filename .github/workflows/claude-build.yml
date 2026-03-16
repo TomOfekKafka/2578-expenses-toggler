@@ -21,16 +21,16 @@ jobs:
       - name: Generate code with Claude Code
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          APP_PROMPT: |
+            ${{ github.event.inputs.prompt }}
+
+            IMPORTANT: After generating all code, you MUST run these commands and fix any errors before finishing:
+            1. npm install
+            2. npm run build
+            If the build fails, fix the errors and rebuild until it succeeds.
+            Do NOT finish until 'npm run build' passes cleanly.
         run: |
-          FULL_PROMPT="${{ github.event.inputs.prompt }}
-
-          IMPORTANT: After generating all code, you MUST run these commands and fix any errors before finishing:
-          1. npm install
-          2. npm run build
-          If the build fails, fix the errors and rebuild until it succeeds.
-          Do NOT finish until 'npm run build' passes cleanly."
-
-          claude -p "$FULL_PROMPT" \
+          claude -p "$APP_PROMPT" \
             --verbose \
             --allowedTools "Bash(command:*)" "Edit" "Write" "Read" "Glob" "Grep" \
             --max-turns 30
