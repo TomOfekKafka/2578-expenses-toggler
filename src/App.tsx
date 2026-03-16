@@ -66,7 +66,7 @@ const pct = (adjusted: number, original: number) => {
 }
 
 interface AggregateRow {
-  DR_ACC_L1?: string
+  DR_ACC_L1.5?: string
   DR_ACC_L2?: string
   Amount?: number
   [key: string]: unknown
@@ -75,7 +75,7 @@ interface AggregateRow {
 function parseApiData(rows: AggregateRow[]): CategoryData[] {
   return rows
     .map((row) => {
-      const category = String(row.DR_ACC_L1 ?? row.DR_ACC_L2 ?? 'Unknown')
+      const category = String(row["DR_ACC_L1.5"] ?? row.DR_ACC_L2 ?? 'Unknown')
       const amount = Number(row.Amount ?? 0)
       return { category, original: Math.abs(amount), adjusted: Math.abs(amount) }
     })
@@ -108,12 +108,12 @@ export default function App() {
         const expenseTable = tableList.find(
           (t) => /expense|p&l|pl|budget/i.test(t.name)
         ) ?? tableList[0]
-        tableIdRef.current = expenseTable.id
+        tableIdRef.current = String(expenseTable.id)
       }
 
       const result = await callMcpTool('aggregate_table_data', {
         table_id: tableIdRef.current,
-        dimensions: ['DR_ACC_L1'],
+        dimensions: ['DR_ACC_L1.5'],
         metrics: [{ field: 'Amount', agg: 'SUM' }],
         filters: [
           { name: 'Scenario', values: ['Actuals'], is_excluded: false },
