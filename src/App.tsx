@@ -106,6 +106,8 @@ export default function App() {
         if (tableList.length === 0) throw new Error('No tables found')
         // Pick first table or one that looks like expenses
         const expenseTable = tableList.find(
+          (t) => /^financials$/i.test(t.name)
+        ) ?? tableList.find(
           (t) => /expense|p&l|pl|budget/i.test(t.name)
         ) ?? tableList[0]
         tableIdRef.current = String(expenseTable.id)
