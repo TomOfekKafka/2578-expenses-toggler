@@ -7,7 +7,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts'
-import { callMcpTool } from './api'
+import { callMcpTool, credentialsReady } from './api'
 
 type Period = 'month' | 'quarter' | 'year'
 
@@ -99,6 +99,7 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
+      await credentialsReady
       // Discover table ID if we haven't yet
       if (!tableIdRef.current) {
         const tables = await callMcpTool('list_finance_tables', {}) as { tables?: Array<{ id: string; name: string }> }
